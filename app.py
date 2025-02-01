@@ -4,15 +4,18 @@ from groq import Groq
 import json
 import requests
 from streamlit_lottie import st_lottie
-import pyttsx3
-import pptx
-from pptx.util import Inches
-import tempfile
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from io import BytesIO
+from dotenv import load_dotenv
+import os
 
-# Groq API Key
-GROQ_API_KEY = "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"
-if not GROQ_API_KEY or GROQ_API_KEY == "your-api-key-here":
-    st.error("❌ API Key Missing! Please update the API key in the code.")
+# Load API Key from .env
+load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    st.error("❌ API Key Missing! Please update the GROQ API key in the .env file.")
     st.stop()
 
 client = Groq(api_key=GROQ_API_KEY)
@@ -27,12 +30,41 @@ def load_lottieurl(url):
 
 upload_animation = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_s4tubmwg.json")
 
+dark_theme = """
+    <style>
+        body {
+            background-color: #1E1E1E;
+            color: #FFFFFF;
+        }
+        .stTextInput > div > div > input {
+            background-color: #2D2D2D;
+            color: #FFFFFF;
+        }
+        .stFileUploader > div {
+            background-color: #2D2D2D;
+            color: #FFFFFF;
+        }
+        .stButton>button {
+            background-color: #ff6347;
+            color: white;
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-size: 18px;
+            border: none;
+        }
+        .stButton>button:hover {
+            background-color: #ff4500;
+        }
+    </style>
+"""
+st.markdown(dark_theme, unsafe_allow_html=True)
+
 st.markdown(
     "<h1 style='text-align: center; color: #ff6347;'>📜 Research Paper Summarizer 🤖</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
-    "<p style='text-align: center; font-size:18px;'>Upload a PDF research paper, and I'll generate a short summary, audio narration, and a PowerPoint presentation! 🚀</p>",
+    "<p style='text-align: center; font-size:18px;'>Upload a PDF research paper, and I'll generate a short summary for you! 🚀</p>",
     unsafe_allow_html=True,
 )
 
@@ -42,22 +74,16 @@ uploaded_file = st.file_uploader("📂 Upload a Research Paper (PDF)", type="pdf
 
 def extract_text_from_pdf(file):
     text = ""
-    with fitz.open(stream=file.read(), filetype="pdf") as doc:
+    with fitz.open(stream=file.read()) as doc:
         for page in doc:
             text += page.get_text("text") + "\n"
     return text
-
-def split_text(text, max_length=4000):
-    return [text[i : i + max_length] for i in range(0, len(text), max_length)]
 
 def summarize_with_groq(text):
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are an AI research assistant. Summarize the given research paper concisely. Provide a very short, plain-text summary in simple words.",
-                },
+                {"role": "system", "content": "Summarize this research paper in a structured format with key points."},
                 {"role": "user", "content": text},
             ],
             model="llama-3.3-70b-versatile",
@@ -66,33 +92,99 @@ def summarize_with_groq(text):
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
-def text_to_speech(text):
-    engine = pyttsx3.init()
-    engine.setProperty('rate', 140)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
-        engine.save_to_file(text, tmp_audio.name)
-        engine.runAndWait()
-        return tmp_audio.name
+def generate_pptx(lesson_topic):
+    try:
+        prompt = (
+            "Create PowerPoint slides for a lesson plan based on this research paper summary. "
+            "For each slide, provide a clear title and up to 4 concise bullet points. "
+            "Do not include labels like 'Heading:', 'Sub-point:', etc. - just write the content directly. "
+            "Start with a title slide and end with key takeaways. "
+            "Format each slide as:\n\n"
+            "[Title of Slide]\n"
+            "• First point\n"
+            "• Second point\n"
+            "• Third point\n"
+            "• Fourth point\n\n"
+            "Research Paper Summary:\n{}"
+        ).format(lesson_topic)
 
-def create_ppt(summary):
-    presentation = pptx.Presentation()
-    slide_layout = presentation.slide_layouts[5]  # Title Only layout
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that creates clear and concise PowerPoint slide outlines for teaching purposes. Present content directly without labels or prefixes."
+                },
+                {"role": "user", "content": prompt},
+            ],
+            model="llama-3.3-70b-versatile",
+        )
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        return f"❌ Error generating PowerPoint outline: {str(e)}"
+
+def apply_slide_styling(slide):
+    # Set background color (light gray for professional look)
+    background = slide.background
+    fill = background.fill
+    fill.solid()
+    fill.fore_color.rgb = RGBColor(245, 245, 245)
     
-    for i, chunk in enumerate(summary.split('\n')):
-        if chunk.strip():
-            slide = presentation.slides.add_slide(slide_layout)
-            title = slide.shapes.title
-            title.text = f"Slide {i + 1}"
-            
-            textbox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(8), Inches(5))
-            text_frame = textbox.text_frame
-            text_frame.word_wrap = True
-            p = text_frame.add_paragraph()
-            p.text = chunk
+    # Style the title if it exists
+    if slide.shapes.title:
+        title_shape = slide.shapes.title
+        title_frame = title_shape.text_frame
+        title_frame.paragraphs[0].font.size = Pt(28)
+        title_frame.paragraphs[0].font.bold = True
+        title_frame.paragraphs[0].font.color.rgb = RGBColor(44, 44, 44)
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp_ppt:
-        presentation.save(tmp_ppt.name)
-        return tmp_ppt.name
+def create_ppt(summary_text):
+    lesson_topic = summary_text.strip()
+    ppt_outline = generate_pptx(lesson_topic)
+    
+    # Create a PowerPoint presentation based on the outline
+    prs = Presentation()
+    slides = ppt_outline.strip().split('\n\n')
+    
+    for slide_content in slides:
+        lines = [line.strip() for line in slide_content.split('\n') if line.strip()]
+        if not lines:
+            continue
+            
+        # First line is the title
+        slide_title = lines[0].strip('[]')  # Remove brackets if present
+        bullet_points = lines[1:]  # Rest are bullet points
+
+        # Add a slide to the presentation
+        slide_layout = prs.slide_layouts[1]
+        current_slide = prs.slides.add_slide(slide_layout)
+        
+        # Apply styling to the slide
+        apply_slide_styling(current_slide)
+        
+        # Set title
+        title = current_slide.shapes.title
+        title.text = slide_title
+        
+        # Add and style content
+        if bullet_points:
+            content = current_slide.placeholders[1]
+            text_frame = content.text_frame
+            
+            # Add each bullet point
+            for idx, point in enumerate(bullet_points):
+                p = text_frame.add_paragraph()
+                p.text = point.strip('• ')  # Remove bullet if present
+                p.font.size = Pt(18)
+                p.font.color.rgb = RGBColor(66, 66, 66)
+                p.space_after = Pt(12)
+                p.space_before = Pt(6)
+                p.level = 0  # This ensures it's a bullet point
+
+    # Save PPT to memory buffer
+    ppt_buffer = BytesIO()
+    prs.save(ppt_buffer)
+    ppt_buffer.seek(0)
+    return ppt_buffer
 
 if uploaded_file:
     st.success("✅ File uploaded successfully!")
@@ -101,18 +193,19 @@ if uploaded_file:
     if not pdf_text.strip():
         st.error("❌ No text found in the PDF! Please upload another file.")
         st.stop()
-
-    if st.button("✨ Generate Summary, Audio & PPT!", use_container_width=True):
-        with st.spinner("⏳ Processing... please wait!"):
-            chunks = split_text(pdf_text)
-            summary = "\n".join([summarize_with_groq(chunk) for chunk in chunks])
-            audio_path = text_to_speech(summary)
-            ppt_path = create_ppt(summary)
-
+    
+    if st.button("✨ Generate Summary & PPT", use_container_width=True):
+        with st.spinner("⏳ Summarizing... please wait!"):
+            summary = summarize_with_groq(pdf_text)
+        
         st.subheader("🔍 Research Paper Summary")
         st.write(summary)
-
-        st.download_button("📥 Download Summary", data=summary, file_name="summary.txt", mime="text/plain")
-        st.audio(audio_path, format="audio/mp3")
-        with open(ppt_path, "rb") as ppt_file:
-            st.download_button("📊 Download PowerPoint", ppt_file, file_name="summary_presentation.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        
+        ppt_file = create_ppt(summary)
+        st.download_button(
+            label="📥 Download Summary PPT",
+            data=ppt_file,
+            file_name="summary_presentation.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            use_container_width=True,
+        )
