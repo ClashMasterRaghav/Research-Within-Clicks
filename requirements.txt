@@ -8,3 +8,4 @@ Pillow
 python-pptx
 pyttsx3
 moviepy==1.0.3
+python-dotenv
