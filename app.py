@@ -4,7 +4,12 @@ from groq import Groq
 import json
 import requests
 from streamlit_lottie import st_lottie
+import pyttsx3
+import pptx
+from pptx.util import Inches
+import tempfile
 
+# Groq API Key
 GROQ_API_KEY = "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"
 if not GROQ_API_KEY or GROQ_API_KEY == "your-api-key-here":
     st.error("❌ API Key Missing! Please update the API key in the code.")
@@ -22,41 +27,12 @@ def load_lottieurl(url):
 
 upload_animation = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_s4tubmwg.json")
 
-dark_theme = """
-    <style>
-        body {
-            background-color: #1E1E1E;
-            color: #FFFFFF;
-        }
-        .stTextInput > div > div > input {
-            background-color: #2D2D2D;
-            color: #FFFFFF;
-        }
-        .stFileUploader > div {
-            background-color: #2D2D2D;
-            color: #FFFFFF;
-        }
-        .stButton>button {
-            background-color: #ff6347;
-            color: white;
-            border-radius: 10px;
-            padding: 10px 20px;
-            font-size: 18px;
-            border: none;
-        }
-        .stButton>button:hover {
-            background-color: #ff4500;
-        }
-    </style>
-"""
-st.markdown(dark_theme, unsafe_allow_html=True)
-
 st.markdown(
     "<h1 style='text-align: center; color: #ff6347;'>📜 Research Paper Summarizer 🤖</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
-    "<p style='text-align: center; font-size:18px;'>Upload a PDF research paper, and I'll generate a short summary for you! 🚀</p>",
+    "<p style='text-align: center; font-size:18px;'>Upload a PDF research paper, and I'll generate a short summary, audio narration, and a PowerPoint presentation! 🚀</p>",
     unsafe_allow_html=True,
 )
 
@@ -66,7 +42,7 @@ uploaded_file = st.file_uploader("📂 Upload a Research Paper (PDF)", type="pdf
 
 def extract_text_from_pdf(file):
     text = ""
-    with fitz.open(stream=file.read()) as doc:
+    with fitz.open(stream=file.read(), filetype="pdf") as doc:
         for page in doc:
             text += page.get_text("text") + "\n"
     return text
@@ -90,6 +66,34 @@ def summarize_with_groq(text):
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
+def text_to_speech(text):
+    engine = pyttsx3.init()
+    engine.setProperty('rate', 140)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+        engine.save_to_file(text, tmp_audio.name)
+        engine.runAndWait()
+        return tmp_audio.name
+
+def create_ppt(summary):
+    presentation = pptx.Presentation()
+    slide_layout = presentation.slide_layouts[5]  # Title Only layout
+    
+    for i, chunk in enumerate(summary.split('\n')):
+        if chunk.strip():
+            slide = presentation.slides.add_slide(slide_layout)
+            title = slide.shapes.title
+            title.text = f"Slide {i + 1}"
+            
+            textbox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(8), Inches(5))
+            text_frame = textbox.text_frame
+            text_frame.word_wrap = True
+            p = text_frame.add_paragraph()
+            p.text = chunk
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp_ppt:
+        presentation.save(tmp_ppt.name)
+        return tmp_ppt.name
+
 if uploaded_file:
     st.success("✅ File uploaded successfully!")
     pdf_text = extract_text_from_pdf(uploaded_file)
@@ -98,18 +102,17 @@ if uploaded_file:
         st.error("❌ No text found in the PDF! Please upload another file.")
         st.stop()
 
-    if st.button("✨ Summarize Now!", use_container_width=True):
-        with st.spinner("⏳ Summarizing... please wait!"):
+    if st.button("✨ Generate Summary, Audio & PPT!", use_container_width=True):
+        with st.spinner("⏳ Processing... please wait!"):
             chunks = split_text(pdf_text)
             summary = "\n".join([summarize_with_groq(chunk) for chunk in chunks])
+            audio_path = text_to_speech(summary)
+            ppt_path = create_ppt(summary)
 
         st.subheader("🔍 Research Paper Summary")
         st.write(summary)
 
-        st.download_button(
-            label="📥 Download Summary",
-            data=summary,
-            file_name="summary.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
+        st.download_button("📥 Download Summary", data=summary, file_name="summary.txt", mime="text/plain")
+        st.audio(audio_path, format="audio/mp3")
+        with open(ppt_path, "rb") as ppt_file:
+            st.download_button("📊 Download PowerPoint", ppt_file, file_name="summary_presentation.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")

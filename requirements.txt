@@ -1,5 +1,10 @@
 streamlit
+fitz
 pymupdf
-groq
+groq 
 requests
 streamlit-lottie
+Pillow
+python-pptx
+pyttsx3
+moviepy==1.0.3
