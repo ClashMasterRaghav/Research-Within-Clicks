@@ -11,7 +11,7 @@ from io import BytesIO
 from dotenv import load_dotenv
 import os
 
-GROQ_API_KEY = "${{ secrets.key }}"
+GROQ_API_KEY = "${{ secrets.KEY }}"
 if not GROQ_API_KEY:
     st.error("❌ API Key Missing! Please update the GROQ API key in the .env file.")
     st.stop()
