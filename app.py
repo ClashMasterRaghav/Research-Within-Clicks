@@ -11,7 +11,7 @@ from io import BytesIO
 from dotenv import load_dotenv
 import os
 
-GROQ_API_KEY = "${{ secrets.KEY }}"
+GROQ_API_KEY = "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"
 
 client = Groq(api_key=GROQ_API_KEY)
 
