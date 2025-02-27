@@ -81,7 +81,7 @@ def summarize_with_groq(text):
                 {"role": "system", "content": "Summarize this research paper in a structured format with key points."},
                 {"role": "user", "content": text},
             ],
-            model="deepseek-r1-distill-llama-70b",
+            model="llama-3.1-70b-versatile",
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
